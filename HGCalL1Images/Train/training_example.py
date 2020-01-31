@@ -1,12 +1,11 @@
 
 
-
 from DeepJetCore.training.training_base import training_base
 import keras
 from keras.models import Model
 from keras.layers import Dense, Conv2D, Flatten, BatchNormalization #etc
 
-def my_model(Inputs,nclasses,nregressions,otheroption):
+def my_model(Inputs,otheroption):
     
     x = Inputs[0] #this is the self.x list from the TrainData data structure
     x = BatchNormalization(momentum=0.9)(x)
@@ -19,40 +18,19 @@ def my_model(Inputs,nclasses,nregressions,otheroption):
     x = Flatten()(x)
     x = Dense(32, activation='relu')(x)
     
-    x = Dense(nclasses, activation='softmax')(x)
-    
-    predictions = [x]
-    return Model(inputs=Inputs, outputs=predictions)
-
-def my_regression_model(Inputs,nclasses,nregressions,otheroption):
-    
-    x = Inputs[0] #this is the self.x list from the TrainData data structure
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Conv2D(8,(4,4),activation='relu', padding='same')(x)
-    x = Conv2D(8,(4,4),activation='relu', padding='same')(x)
-    x = Conv2D(8,(4,4),activation='relu', padding='same')(x)
-    x = BatchNormalization(momentum=0.9)(x)
-    x = Conv2D(8,(4,4),strides=(2,2),activation='relu', padding='valid')(x)
-    x = Conv2D(4,(4,4),strides=(2,2),activation='relu', padding='valid')(x)
-    x = Flatten()(x)
-    x = Dense(32, activation='relu')(x)
-    
-    x = Dense(nregressions, activaton='None')(x)
+    # 3 prediction classes
+    x = Dense(3, activation='softmax')(x)
     
     predictions = [x]
     return Model(inputs=Inputs, outputs=predictions)
 
 
-
-train=training_base(testrun=False,resumeSilently=False,renewtokens=True)
-
+train=training_base(testrun=False,resumeSilently=False,renewtokens=False)
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
-    #for regression use the regression model
     train.setModel(my_model,otheroption=1)
     
-    #for regression use a different loss, e.g. mean_squared_error
     train.compileModel(learningrate=0.003,
                    loss='categorical_crossentropy') 
                    
@@ -63,8 +41,5 @@ model,history = train.trainModel(nepochs=10,
                                  batchsize=500,
                                  checkperiod=1, # saves a checkpoint model every N epochs
                                  verbose=1)
-
-
-
-
-
+                                 
+print('Since the training is done, use the predict.py script to predict the model output on you test sample, e.g.: predict.py <training output>/KERAS_model.h5 <training output>/trainsamples.djcdc <path to data>/test.txt <output dir>')
