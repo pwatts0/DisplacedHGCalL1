@@ -1,5 +1,4 @@
 
-
 #include "TString.h"
 #include "friendTreeInjector.h"
 #include <iostream>
@@ -22,5 +21,4 @@ int main(int argc, char* argv[]){
     /*
     * For more information please refer to how to analse a TTree of the root documentation
     */
-
 }
