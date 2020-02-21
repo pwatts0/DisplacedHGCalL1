@@ -26,18 +26,20 @@ class TrainData_calo(TrainData):
             return False
         return True
     
-    def addPU(self, energy, nevents, nPU):
+    def addPU(self, energy, nevents, nPU, istestsample):
         
         if nPU<1:
             return energy
         #each file has 20 PU
-        pufolder="/data/hgcal-0/store/jkiesele/Displ_Calo_minbias/400ev_25PU/"
+        pufolder="/data/hgcal-0/store/jkiesele/Displ_Calo_minbias/prod0_ev400_pu25/"
+        if istestsample:
+            pufolder="/data/hgcal-0/store/jkiesele/Displ_Calo_minbias/400ev_25PU_test/"
         minbias_files= glob.glob(pufolder+"*.djctd")
 
         select = np.array(range(len(minbias_files)))
         
-        if nPU%100:
-            raise ValueError("nPU must be multiples of 100")
+        if nPU%25:
+            raise ValueError("nPU must be multiples of 25")
         
         befpu_en = np.sum(energy)
         
@@ -64,9 +66,17 @@ class TrainData_calo(TrainData):
         print('PU '+str(nPU)+ ' PU energy '+str(pu_en)+' signal en '+str(befpu_en))
         return energy
         
+    def to_color(self, rechit_image):
+        colors = np.array(range(14),dtype='float')/14. #layer colours
+        colors = cm.rainbow(colors)
+        colors = colors[:,:-1]
+        colors = np.reshape(colors, [1,1,1,14,3])
+        rechit_energy = np.expand_dims(rechit_image, axis=-1)
+        rechit_energy = np.array(rechit_energy*colors, dtype='float32')
+        return np.sum(rechit_energy, axis=3)
+        
     
-    
-    def read_and_project(self, filename, weighterobjects, istraining, readPU):
+    def read_and_add_minbias(self, filename, weighterobjects, istraining, readPU):
         
         #project to 3 planes
         #assign 'colour' for each
@@ -89,54 +99,58 @@ class TrainData_calo(TrainData):
         rechit_energy = self.tonumpy(tree["rechit_energy"].array() )
         print(rechit_energy.shape)
         
-        #create minbias and signal
-        #rechit_energy = np.tile(rechit_energy,[2,1])
-        issignal = np.array([0.,1.], dtype='float32')
+        #create minbias and signal  B x V
+        no_signal = np.zeros_like(rechit_energy, dtype='float32')
+        
+        rechit_energy = np.concatenate([rechit_energy, no_signal],axis=-1) # B x 2*V
+        rechit_energy = np.reshape(rechit_energy, [nevents*2, -1]) # 2*B x V
+        
+        issignal = np.array([1.,0.], dtype='float32')
         issignal = np.reshape(issignal, [2,1])
         issignal = np.tile(issignal, [nevents,1])
-        #rechit_energy *= issignal
+        
+        print(np.sum(rechit_energy,axis=-1))
+        
+        #for failed events
+        issignal[np.sum(rechit_energy,axis=-1)==0] = 0 
+        
+        #print('issignal',issignal)
+        #print('rechit_energy',rechit_energy.shape)
         
         if readPU:
             print('adding PU')
-            rechit_energy = self.addPU(rechit_energy, rechit_energy.shape[0], 00)
+            rechit_energy = self.addPU(rechit_energy, rechit_energy.shape[0], 200, not istraining)
             print('PU done')
         rechit_energy = np.reshape(rechit_energy, [-1, nofEELayers, etasegments, Ncalowedges]) #nofEELayers, etasegments, Ncalowedges
         print(rechit_energy.shape)
         rechit_energy = rechit_energy.transpose((0,2,3,1))
-        print(rechit_energy.shape)
+        
         #exit()
         
         #maybe use layer number as colour modifier here?
         
-        colors = np.array(range(14),dtype='float')/14. #layer colours
-        colors = cm.rainbow(colors)
-        colors = colors[:,:-1]
-        colors = np.reshape(colors, [1,1,1,14,3])
-        rechit_energy = np.expand_dims(rechit_energy, axis=-1)
         
-        print(rechit_energy.shape)
-        print(colors.shape)
         
         norm = np.array([[[[
-            [0.00010236],
-            [0.0002501 ],
-            [0.00041541],
-            [0.00054669],
-            [0.00065345],
-            [0.00072501],
-            [0.00074395],
-            [0.00071629],
-            [0.00067139],
-            [0.00060171],
-            [0.00052976],
-            [0.00047216],
-            [0.00039632],
-            [0.00024775],
+            0.00010236,
+            0.0002501 ,
+            0.00041541,
+            0.00054669,
+            0.00065345,
+            0.00072501,
+            0.00074395,
+            0.00071629,
+            0.00067139,
+            0.00060171,
+            0.00052976,
+            0.00047216,
+            0.00039632,
+            0.00024775,
             ]]]],dtype='float32')
         
-        rechit_energy = np.array(rechit_energy/norm*colors, dtype='float32')
+        rechit_energy = np.ascontiguousarray(rechit_energy/norm,dtype='float32')
         
-        all = np.sum(rechit_energy, axis=3)
+        print(rechit_energy.shape)
         
         ##rechit energy: B x eta x phi x layerEn (14)
         #
@@ -147,14 +161,13 @@ class TrainData_calo(TrainData):
         #all = first_projection #np.concatenate([first_projection,sec_projection,third_projection], axis=-1)
         #
 
-        print(all.shape)
         
         
-        return all, issignal
+        return rechit_energy, issignal
     
     def convertFromSourceFile(self, filename, weighterobjects, istraining):
         
-        all, issignal = self.read_and_project(filename, weighterobjects, istraining,True)
+        all, issignal = self.read_and_add_minbias(filename, weighterobjects, True, True)#istraining,True)
         
         #eal with phi modulo. it is 120/2pi, so 0.4 in phi should be enough, so 8 extra repitions
         all = np.concatenate([all, all[:,:,:8,:]],axis=2)
@@ -163,11 +176,11 @@ class TrainData_calo(TrainData):
         if debug:
             #event=1
             for event in range(50):
-                evtsforplot = np.sum(all[event:event+1], axis=0)
+                evtsforplot = np.sum(self.to_color(all[event:event+1]), axis=0)
                 import matplotlib.pyplot as plt
                 fig,ax =  plt.subplots(1,1)
                 maxcol = np.max(evtsforplot)
-                ax.imshow(evtsforplot/maxcol)
+                ax.imshow(evtsforplot/(maxcol+0.0001))
                 #print('max energy '+str(maxcol))
                 fig.savefig("event_displ"+str(event)+".pdf")
                 plt.close()
@@ -178,9 +191,26 @@ class TrainData_calo(TrainData):
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         # predicted will be a list
         
+        tree = uproot.open(inputfile)["B4"]
+        true_energy = np.expand_dims(self.tonumpy(tree["true_energy"].array() ),axis=1)
+        true_howparallel = np.expand_dims(self.tonumpy(tree["true_howparallel"].array() ),axis=1)
+        
+        print('true_energy' ,true_energy.shape)
+        
+        zeros = np.zeros_like(true_energy)
+        
+        true_energy = np.concatenate([true_energy,zeros],axis=-1)
+        true_energy = np.reshape(true_energy, [zeros.shape[0]*2,1])
+        
+        true_howparallel= np.concatenate([true_howparallel,zeros],axis=-1)
+        true_howparallel = np.reshape(true_howparallel, [zeros.shape[0]*2,1])
+        
+        print(predicted[0].shape, truth[0].shape, true_howparallel.shape, true_energy.shape)
+        
         from root_numpy import array2root
-        out = np.core.records.fromarrays(predicted[0].transpose(), 
-                                             names='prob_isLLP')
+        out = np.core.records.fromarrays(np.concatenate([predicted[0], truth[0], true_howparallel, true_energy],axis=-1).transpose(), 
+                                             names='prob_isSignal, isSignal, true_howparallel, true_energy')
         
         array2root(out, outfilename, 'tree')
+        
         
