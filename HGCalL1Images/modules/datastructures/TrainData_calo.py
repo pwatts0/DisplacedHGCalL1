@@ -167,7 +167,7 @@ class TrainData_calo(TrainData):
     
     def convertFromSourceFile(self, filename, weighterobjects, istraining):
         
-        all, issignal = self.read_and_add_minbias(filename, weighterobjects, True, True)#istraining,True)
+        all, issignal = self.read_and_add_minbias(filename, weighterobjects, istraining, True)#istraining,True)
         
         #eal with phi modulo. it is 120/2pi, so 0.4 in phi should be enough, so 8 extra repitions
         all = np.concatenate([all, all[:,:,:8,:]],axis=2)
