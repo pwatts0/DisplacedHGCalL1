@@ -2,63 +2,34 @@
 
 import uproot
 import numpy as np
-from root_numpy import array2root
 import os
 from argparse import ArgumentParser
 from multiprocessing import Pool
 
 
-def tonumpy(inarr):
-    return np.array(list(inarr), dtype='float32')
-
-
-#makes 
-def readPU(minbias_files, nevents=50, nfiles=5, nPU=200):
-    select = np.array(range(len(minbias_files)))
-    np.random.shuffle(select)
-    select = select[:nfiles]
-    #print(select)
-    #open them
-    #take nPU random events
-    inarrs=[]
-    for i in range(nfiles):
-        file = minbias_files[select[i]]
-        tree = uproot.open(file)["B4"]
-        arr = tonumpy(tree["rechit_energy"].array() )
-        arr = np.expand_dims(arr, axis=0)# 1 x nev x rh
-        inarrs.append(arr)
-    
-    allarr = np.concatenate(inarrs, axis=0) #nfiles x nev x rh
-    allarr = np.reshape(allarr, [allarr.shape[0]*allarr.shape[1],allarr.shape[2]])
-    
-    #print(allarr.shape)
-    evtarrs=[]
-    for ev in range(nevents):
-        idx = np.random.randint(allarr.shape[0], size=nPU)
-        evt = allarr[idx]
-        evt = np.sum(evt,axis=0, keepdims=True)
-        #print(evt.shape)
-        evtarrs.append(evt)
-    
-    return np.concatenate(evtarrs,axis=0)
-        
-    
+from mixing import  tonumpy, readPU
+from mixing import premixfile as pmf
         
 
 parser = ArgumentParser('premix PU')
 parser.add_argument('inputFile')
-parser.add_argument('-o', help='outputDir', default='')
+parser.add_argument('nOutput', help='number of mixed output files',type=int)
+parser.add_argument('outputDir')
+parser.add_argument('-e', help='number of events per output file', default=800, type=int)
+parser.add_argument('--pu', help='pileup', default=200, type=int)
 
 args = parser.parse_args()
 
-from DeepJetCore.TrainData import TrainData #heavy import here
-
-
-outdir=args.o
-if len(outdir) < 1:
+nPU=args.pu
+nEvents=args.e
+outputDir=args.outputDir
+nOutput=args.nOutput
+if len(outputDir) < 1:
     exit()
+    
 
-os.system('mkdir -p '+outdir)
+
+os.system('mkdir -p '+outputDir)
 
 
 allfiles = []
@@ -72,42 +43,41 @@ with open(args.inputFile) as f:
                 nevents = tree.numentries
                 allfiles.append(l)
             except:
-                pass
+                print('file '+l+ ' seems to have problems, skipping')
             
             
-            
-# 100 PU per file 100 events per file 
-# this reduces the effective stat by a factor of 8
-def premixfile(f): 
-    eventsperround=200
-    neventstotal=400
-    nPUpremix = 25
+
+
+#bigger import 
+from DeepJetCore.TrainData import TrainData #heavy import here  
+
+def premixfile(i): 
+
+    eventsperround=100
+    neventstotal=nEvents
+    nPUpremix = nPU
     nfilespremix = 5
     
-    nevents=0 
-    filearr=[]
-    print(f)
-    while nevents<100:
-        print('..adding files..')          
-        filearr.append(readPU(allfiles, nevents=eventsperround, nfiles=nfilespremix, nPU=nPUpremix))
-        nevents+=eventsperround
-    filearr = np.concatenate(filearr,axis=0)
-    mean = np.mean(filearr)
-    print('mean energy ',mean)
+    filearr = pmf(i,allfiles,neventstotal,nPUpremix,nfilespremix=5,eventsperround=100)
+    
+    print('nevents', filearr.shape[0])
     td = TrainData()
     td._store([filearr],[],[])
-    print('..writing '+os.path.basename(f)) 
-    td.writeToFile(outdir+'/'+os.path.basename(f)+'_mix.djctd')
+    print('..writing '+str(i))
+     
+    td.writeToFile(outputDir+'/'+str(i)+'_mix.djctd')
     del td
-
+    
 
 
 
 print("mixing")
 #premixfile(allfiles[0])
 #exit()
-p = Pool(20)
-p.map(premixfile, allfiles)
+indices=[i for i in range(nOutput)]
+
+p = Pool(min(20, nOutput))
+p.map(premixfile, indices)
 
 
 

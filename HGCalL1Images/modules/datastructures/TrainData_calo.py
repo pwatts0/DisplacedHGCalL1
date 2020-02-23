@@ -6,10 +6,17 @@ import uproot
 import glob
 import random
 import matplotlib.cm as cm
+from mixing import premixfile
+
+
+
 
 class TrainData_calo(TrainData):
     def __init__(self):
         TrainData.__init__(self)
+        
+        self.nPU=200
+        
         
     #def createWeighterObjects(self, allsourcefiles):
         # 
@@ -26,44 +33,16 @@ class TrainData_calo(TrainData):
             return False
         return True
     
-    def addPU(self, energy, nevents, nPU, istestsample):
+    def addPU(self, energy, nPU, inputfilenumber, istestsample):
         
         if nPU<1:
             return energy
-        #each file has 20 PU
-        pufolder="/data/hgcal-0/store/jkiesele/Displ_Calo_minbias/prod0_ev400_pu25/"
-        if istestsample:
-            pufolder="/data/hgcal-0/store/jkiesele/Displ_Calo_minbias/400ev_25PU_test/"
-        minbias_files= glob.glob(pufolder+"*.djctd")
+        files = TrainData_calo_pufiles_train
+        
+        arr = premixfile(inputfilenumber,files,energy.shape[0],nPU,nfilespremix=5,eventsperround=100)
 
-        select = np.array(range(len(minbias_files)))
+        energy+=arr
         
-        if nPU%25:
-            raise ValueError("nPU must be multiples of 25")
-        
-        befpu_en = np.sum(energy)
-        
-        for i in range(nPU/25): #100PU per event
-            allpu=[]
-            eventshere = 0
-            np.random.shuffle(select)
-            for i in range(len(select)):
-                f = minbias_files[select[i]]
-                td = TrainData()
-                td.readFromFile(f)
-                arr=td.transferFeatureListToNumpy()[0]
-                eventshere+=arr.shape[0]
-                allpu.append(arr)
-                if eventshere >= nevents:
-                    break
-                del td
-            allpu = np.concatenate(allpu,axis=0)
-            allpu = allpu[:nevents]
-            np.random.shuffle(allpu)
-            energy+=allpu
-        
-        pu_en = np.sum(energy) - befpu_en
-        print('PU '+str(nPU)+ ' PU energy '+str(pu_en)+' signal en '+str(befpu_en))
         return energy
         
     def to_color(self, rechit_image):
@@ -117,9 +96,12 @@ class TrainData_calo(TrainData):
         #print('issignal',issignal)
         #print('rechit_energy',rechit_energy.shape)
         
+        filenumber = filename.split('_tmp_')[1]
+        filenumber = int(filenumber[:-5])
+        
         if readPU:
             print('adding PU')
-            rechit_energy = self.addPU(rechit_energy, rechit_energy.shape[0], 200, not istraining)
+            rechit_energy = self.addPU(rechit_energy , self.nPU, filenumber ,not istraining)
             print('PU done')
         rechit_energy = np.reshape(rechit_energy, [-1, nofEELayers, etasegments, Ncalowedges]) #nofEELayers, etasegments, Ncalowedges
         print(rechit_energy.shape)
@@ -172,7 +154,7 @@ class TrainData_calo(TrainData):
         #eal with phi modulo. it is 120/2pi, so 0.4 in phi should be enough, so 8 extra repitions
         all = np.concatenate([all, all[:,:,:8,:]],axis=2)
         
-        debug=True
+        debug=False
         if debug:
             #event=1
             for event in range(50):
@@ -214,3 +196,29 @@ class TrainData_calo(TrainData):
         array2root(out, outfilename, 'tree')
         
         
+
+
+
+
+
+class TrainData_calo_noPU(TrainData):
+    def __init__(self):
+        TrainData.__init__(self)
+        
+        self.nPU=0
+
+
+def readFileList(path):
+    import os
+    files=[]
+    with open(path) as f:
+        for l in f:
+            l = l.rstrip('\n').rstrip(' ')
+            if len(l) and os.path.isfile(l):
+                files.append(l)
+    return files
+    
+    
+
+TrainData_calo_pufiles_train=readFileList("/eos/home-j/jkiesele/DeepNtuples/testminbias/good_files.txt")
+

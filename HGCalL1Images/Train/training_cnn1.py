@@ -10,9 +10,11 @@ def my_model(Inputs,otheroption):
     x = Inputs[0] #B x 30 x 128 x 3
     x = BatchNormalization(momentum=0.6)(x)
     x = Dense(16, activation='relu')(x)
+    x = Dense(32, activation='relu')(x)
+    x = Dense(3, activation='relu')(x)
     
-    
-    x = Conv2D(16, (3,3), padding='valid', activation='relu')(x)
+    x = Conv2D(16, (7,7), padding='same', activation='relu')(x)
+    x = Conv2D(16, (3,3), padding='same', activation='relu')(x)
     x = MaxPooling2D(pool_size=(2,2))(x) #15 x 64
     
     x = Dropout(0.5)(x)
