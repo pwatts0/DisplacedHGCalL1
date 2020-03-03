@@ -15,7 +15,7 @@ all = getAndCheck(args.inputDir)
 
 cwd = os.getcwd()
 
-with open(args.outFile,"w") as f:
-    for l in all:
-        f.write(cwd+'/'+args.inputDir+'/'+l+'\n')
-        
+f = open(args.outFile,"w")
+for l in all:
+    f.write(cwd+'/'+args.inputDir+'/'+l+'\n')
+f.close()    

@@ -58,7 +58,7 @@ def premixfile(i):
     nPUpremix = nPU
     nfilespremix = 5
     
-    filearr = pmf(i,allfiles,neventstotal,nPUpremix,nfilespremix=5,eventsperround=100)
+    filearr = pmf(allfiles,neventstotal,nPUpremix,nfilespremix=5,eventsperround=100)
     
     print('nevents', filearr.shape[0])
     td = TrainData()

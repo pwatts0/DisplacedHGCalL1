@@ -7,8 +7,9 @@ import glob
 import random
 import matplotlib.cm as cm
 from mixing import premixfile
+import os
 
-
+import ROOT
 
 
 class TrainData_calo(TrainData):
@@ -27,19 +28,44 @@ class TrainData_calo(TrainData):
     
     def fileIsValid(self, filename):
         try:
-            tree = uproot.open(filename)["B4"]
-            nevents = tree.numentries
+            #nevents = uproot.numentries(filename, "B4")
+            f=ROOT.TFile.Open(filename)
+            t=f.Get("B4")
+            if t.GetEntries() < 1:
+                raise ValueError("")
         except:
             return False
         return True
     
-    def addPU(self, energy, nPU, inputfilenumber, istestsample):
+    def addPU_direct(self, energy, filenumber, istestsample):
+        
+        files = TrainData_calo_pufiles_train_double
+        files = files[filenumber]
+        print('adding files', files , ' to signal ', filenumber)
+        
+        pu_energy=[]
+        for f in files:
+            tree = uproot.open(f)["B4"]
+            pu_energy.append(self.tonumpy(tree["rechit_energy"].array() ))
+
+        pu_energy = np.concatenate(pu_energy,axis=0)
+        print('pu energy', np.sum(pu_energy, axis=-1))
+        print('signal energy', np.sum(energy, axis=-1))
+        energy+=pu_energy
+        
+        return energy
+    
+    def addPU(self, energy, nPU, istestsample):
         
         if nPU<1:
             return energy
         files = TrainData_calo_pufiles_train
         
-        arr = premixfile(inputfilenumber,files,energy.shape[0],nPU,nfilespremix=5,eventsperround=100)
+        if istestsample:
+            files = TrainData_calo_pufiles_test
+            print('converting test data')
+        
+        arr = premixfile(files,energy.shape[0],nPU,nfilespremix=5,eventsperround=100)
 
         energy+=arr
         
@@ -70,6 +96,8 @@ class TrainData_calo(TrainData):
         #
         # batch, layer, eta, phi
         
+        #istraining=True
+        
         fileTimeOut(filename, 10)#10 seconds for eos to recover 
         
         tree = uproot.open(filename)["B4"]
@@ -77,6 +105,10 @@ class TrainData_calo(TrainData):
         
         rechit_energy = self.tonumpy(tree["rechit_energy"].array() )
         print(rechit_energy.shape)
+        
+        minbias_fraction=2
+        if not istraining:
+            minbias_fraction=100 #work with this later, TBI
         
         #create minbias and signal  B x V
         no_signal = np.zeros_like(rechit_energy, dtype='float32')
@@ -93,16 +125,21 @@ class TrainData_calo(TrainData):
         #for failed events
         issignal[np.sum(rechit_energy,axis=-1)==0] = 0 
         
-        #print('issignal',issignal)
-        #print('rechit_energy',rechit_energy.shape)
+        filenumber = os.path.basename(filename)
+        if "_tmp_" in filenumber:
+            filenumber = filenumber.split("_tmp_")[1]
+        filenumber=int(filenumber[:-5])#remove .root
         
-        filenumber = filename.split('_tmp_')[1]
-        filenumber = int(filenumber[:-5])
         
-        if readPU:
+        if False and readPU:
             print('adding PU')
-            rechit_energy = self.addPU(rechit_energy , self.nPU, filenumber ,not istraining)
+            rechit_energy = self.addPU(rechit_energy , self.nPU ,not istraining)
             print('PU done')
+            
+        rechit_energy = self.addPU_direct(rechit_energy,filenumber,not istraining)
+            
+        print(np.sum(rechit_energy,axis=-1))
+        
         rechit_energy = np.reshape(rechit_energy, [-1, nofEELayers, etasegments, Ncalowedges]) #nofEELayers, etasegments, Ncalowedges
         print(rechit_energy.shape)
         rechit_energy = rechit_energy.transpose((0,2,3,1))
@@ -154,7 +191,7 @@ class TrainData_calo(TrainData):
         #eal with phi modulo. it is 120/2pi, so 0.4 in phi should be enough, so 8 extra repitions
         all = np.concatenate([all, all[:,:,:8,:]],axis=2)
         
-        debug=False
+        debug=True
         if debug:
             #event=1
             for event in range(50):
@@ -173,25 +210,32 @@ class TrainData_calo(TrainData):
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         # predicted will be a list
         
-        tree = uproot.open(inputfile)["B4"]
-        true_energy = np.expand_dims(self.tonumpy(tree["true_energy"].array() ),axis=1)
-        true_howparallel = np.expand_dims(self.tonumpy(tree["true_howparallel"].array() ),axis=1)
+        out = np.concatenate([predicted[0], truth[0]],axis=-1)
+        names = 'prob_isSignal, isSignal'
         
-        print('true_energy' ,true_energy.shape)
-        
-        zeros = np.zeros_like(true_energy)
-        
-        true_energy = np.concatenate([true_energy,zeros],axis=-1)
-        true_energy = np.reshape(true_energy, [zeros.shape[0]*2,1])
-        
-        true_howparallel= np.concatenate([true_howparallel,zeros],axis=-1)
-        true_howparallel = np.reshape(true_howparallel, [zeros.shape[0]*2,1])
-        
-        print(predicted[0].shape, truth[0].shape, true_howparallel.shape, true_energy.shape)
+        if ".root" in inputfile:
+            tree = uproot.open(inputfile)["B4"]
+            true_energy = np.expand_dims(self.tonumpy(tree["true_energy"].array() ),axis=1)
+            true_howparallel = np.expand_dims(self.tonumpy(tree["true_angle"].array() ),axis=1)
+            
+            print('true_energy' ,true_energy.shape)
+            
+            zeros = np.zeros_like(true_energy)
+            
+            true_energy = np.concatenate([true_energy,zeros],axis=-1)
+            true_energy = np.reshape(true_energy, [zeros.shape[0]*2,1])
+            
+            true_howparallel= np.concatenate([true_howparallel,zeros],axis=-1)
+            true_howparallel = np.reshape(true_howparallel, [zeros.shape[0]*2,1])
+            
+            print(predicted[0].shape, truth[0].shape, true_howparallel.shape, true_energy.shape)
+            
+            out = np.concatenate([out, true_howparallel, true_energy],axis=-1)
+            names += ', true_angle, true_energy'
         
         from root_numpy import array2root
-        out = np.core.records.fromarrays(np.concatenate([predicted[0], truth[0], true_howparallel, true_energy],axis=-1).transpose(), 
-                                             names='prob_isSignal, isSignal, true_howparallel, true_energy')
+        out = np.core.records.fromarrays(out.transpose(), 
+                                             names=names)
         
         array2root(out, outfilename, 'tree')
         
@@ -209,7 +253,6 @@ class TrainData_calo_noPU(TrainData):
 
 
 def readFileList(path):
-    import os
     files=[]
     with open(path) as f:
         for l in f:
@@ -217,8 +260,24 @@ def readFileList(path):
             if len(l) and os.path.isfile(l):
                 files.append(l)
     return files
-    
-    
 
-TrainData_calo_pufiles_train=readFileList("/eos/home-j/jkiesele/DeepNtuples/testminbias/good_files.txt")
+def readFileListDouble(path):
+    files=[]
+    td=TrainData_calo()
+    with open(path) as f:
+        twofiles=[]
+        for l in f:
+            l = l.rstrip('\n').rstrip(' ')
+            if len(l) and os.path.isfile(l) and td.fileIsValid(l):
+                twofiles.append(l)
+                if len(twofiles)>1:
+                    files.append(twofiles)
+                    twofiles=[]
+            
+    return files
+    
+TrainData_calo_pufiles_train_double = readFileListDouble("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias_full/testbatch.txt")
 
+
+TrainData_calo_pufiles_train=readFileList("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias/samples_firstbatch.txt")
+TrainData_calo_pufiles_test=readFileList("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias/test_samples.txt")
