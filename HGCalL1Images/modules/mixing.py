@@ -36,31 +36,40 @@ def readPU(minbias_files, nevents=50, nfiles=5, nPU=200):
     if len(select)<nfiles:
         nfiles=len(select)
         print("mixing.readPU: warning: less PU files available than requested - falling back")
+        print(nfiles)
     #print(select)
     #open them
     #take nPU random events
     inarrs=[]
-    for i in range(nfiles):
+    i=0
+    while len(inarrs) < nfiles:
         file = minbias_files[select[i]]
-        print('mixing '+str(select[i]))
+        i+=1
+        #print('mixing: get data '+str(select[i])+' to go '+str(nfiles-i-1))
         fileTimeOut(file,10)
         #check if file is valid
         try:
             f=ROOT.TFile.Open(file)
             f.Get("B4")
         except:
-            nfiles+=1 #just take the next one
             continue
         
-        tree = uproot.open(file)["B4"]
-        arr = tonumpy(tree["rechit_energy"].array() )
-        arr = np.expand_dims(arr, axis=0)# 1 x nev x rh
-        inarrs.append(arr)
+        ramfile=file
+        try:
+            tree = uproot.open(ramfile)["B4"]
+            arr = tonumpy(tree["rechit_energy"].array() )
+            #print('arr',arr.shape)
+            #arr = np.expand_dims(arr, axis=0)# 1 x nev x rh
+            #print('arr2',arr.shape, ramfile)
+            inarrs.append(arr)
+        except:
+            continue
     
-    allarr = np.concatenate(inarrs, axis=0) #nfiles x nev x rh
-    allarr = np.reshape(allarr, [allarr.shape[0]*allarr.shape[1],allarr.shape[2]])
+    allarr = np.concatenate(inarrs, axis=0) # nfiles*nev x rh
+    #allarr = np.reshape(allarr, [allarr.shape[0]*allarr.shape[1],allarr.shape[2]])
     
     #print(allarr.shape)
+    #print('mixing events')
     evtarrs=[]
     for ev in range(nevents):
         idx = np.random.randint(allarr.shape[0], size=nPU)
@@ -68,14 +77,20 @@ def readPU(minbias_files, nevents=50, nfiles=5, nPU=200):
         evt = np.sum(evt,axis=0, keepdims=True)
         #print(evt.shape)
         evtarrs.append(evt)
-    
-    return np.concatenate(evtarrs,axis=0)
+        
+    evts = np.concatenate(evtarrs,axis=0)
+    #print('mixed '+str(evts.shape))
+    return evts
         
         
-def premixfile(allfiles,neventstotal,nPU,nfilespremix=5,eventsperround=100): 
+def premixfile(allfiles,neventstotal,nPU,nfilespremix=5,eventsperround=100,seed=0): 
 
     nevents=0 
     filearr=[]
+    np.random.seed(seed)
+    
+    if eventsperround>neventstotal:
+        eventsperround=neventstotal
 
     while nevents<neventstotal:         
         filearr.append(readPU(allfiles, nevents=eventsperround, nfiles=nfilespremix, nPU=nPU))
