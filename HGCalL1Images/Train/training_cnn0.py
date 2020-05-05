@@ -16,25 +16,25 @@ def my_model(Inputs,dropoutrate=0.1,momentum=0.95):
     x_col = Dense(4, activation='relu', name="pseudocolors")(x)
     x = Dropout(dropoutrate/5.)(x_col)
     
-    x = Conv2D(16, (4,4), padding='same', activation='relu')(x)
-    x = Conv2D(16, (3,3), padding='same', activation='relu')(x) #,strides=(2,2)
+    #x = Conv2D(16, (4,4), padding='same', activation='relu')(x)
+    x = Conv2D(16, (3,3), padding='valid', activation='relu')(x) #,strides=(2,2)
     x = MaxPooling2D(pool_size=(2,2))(x) #15 x 64
-    
-    
     x = BatchNormalization(momentum=momentum)(x)
-    
     
     x = Conv2D(16, (3,3), padding='valid', activation='relu')(x)
     x = MaxPooling2D(pool_size=(2,2))(x) #7 x 32
-    
+    x = BatchNormalization(momentum=momentum)(x)
     
     x = Dropout(dropoutrate)(x)
     
     x = Conv2D(16, (3,3), padding='valid', activation='relu')(x)
-    x = MaxPooling2D(pool_size=(2,2))(x) #3 x 16
-    
-    
+    x = MaxPooling2D(pool_size=(1,2))(x) #7 x 32
     x = BatchNormalization(momentum=momentum)(x)
+    
+    x = Conv2D(16, (3,3), padding='valid', activation='relu')(x)
+    x = MaxPooling2D(pool_size=(1,2))(x) #7 x 32
+    x = BatchNormalization(momentum=momentum)(x)
+    
     x = Dropout(dropoutrate)(x)
     
     x = Flatten()(x)

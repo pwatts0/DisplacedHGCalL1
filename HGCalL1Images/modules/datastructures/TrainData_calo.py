@@ -12,11 +12,34 @@ import os
 import ROOT
 
 
+
+def readFileList(path):
+    print('verifying minbias file list for '+path)
+    files=[]
+    dir = os.path.dirname(path)
+    with open(path) as f:
+        for l in f:
+            l = dir+'/'+l.rstrip('\n').rstrip(' ')
+            if len(l):# # and os.path.isfile(l):
+                files.append(l)
+    return files
+
+
+if "cmg-gpu1080" in os.getenv("HOSTNAME"):
+    TrainData_calo_pufiles_test=readFileList("/home/scratch/jkiesele/minbias_test/files.txt")
+    TrainData_calo_pufiles_train=readFileList("/data/hgcal-0/store/jkiesele/Displ_Calo/minbias/minbias_train/files.txt")
+else:
+    TrainData_calo_pufiles_test=readFileList("/eos/home-j/jalimena/DisplacedCalo/minbias_test/files.txt")
+    TrainData_calo_pufiles_train=readFileList("/eos/home-j/jalimena/DisplacedCalo/minbias_train/files.txt")
+    
 class TrainData_calo(TrainData):
     def __init__(self):
         TrainData.__init__(self)
         
         self.nPU=200
+        self.nfilespremix=20
+        self.eventsperround=200
+        self.always_use_test_minbias=False
         
         
     #def createWeighterObjects(self, allsourcefiles):
@@ -55,20 +78,19 @@ class TrainData_calo(TrainData):
         
         return energy
     
-    def addPU(self, energy, nPU, istestsample):
+    def addPU(self, energy, nPU, istestsample, seed):
         
         if nPU<1:
             return energy
         files = TrainData_calo_pufiles_train
         
-        if istestsample:
+        if istestsample or self.always_use_test_minbias:
             files = TrainData_calo_pufiles_test
-            print('converting test data')
+            print('using test data')
         
-        arr = premixfile(files,energy.shape[0],nPU,nfilespremix=5,eventsperround=100)
-
+        arr = premixfile(files,energy.shape[0],nPU,nfilespremix=self.nfilespremix,
+                         eventsperround=self.eventsperround, seed=seed)
         energy+=arr
-        
         return energy
         
     def to_color(self, rechit_image):
@@ -79,6 +101,17 @@ class TrainData_calo(TrainData):
         rechit_energy = np.expand_dims(rechit_image, axis=-1)
         rechit_energy = np.array(rechit_energy*colors, dtype='float32')
         return np.sum(rechit_energy, axis=3)
+    
+    
+    def mix_signal_info(self, signal_in, zeros_per_signal):
+        if zeros_per_signal < 1:
+            return signal_in
+        #print('signal_in',signal_in.shape)
+        no_signal = np.zeros_like(signal_in, dtype='float32') # B x V
+        no_signal = np.tile(no_signal,[1,zeros_per_signal])
+        #print('no_signal',no_signal.shape)
+        added_zeros = np.concatenate([signal_in,no_signal],axis=1) # B x (N+1)V
+        return np.reshape(added_zeros, [(zeros_per_signal+1)*signal_in.shape[0], -1]) # (N+1)B x V
         
     
     def read_and_add_minbias(self, filename, weighterobjects, istraining, readPU):
@@ -98,7 +131,8 @@ class TrainData_calo(TrainData):
         
         #istraining=True
         
-        fileTimeOut(filename, 10)#10 seconds for eos to recover 
+        if not self.fileIsValid(filename):#30 seconds for eos to recover 
+            raise Exception("File "+filename+" could not be read")
         
         tree = uproot.open(filename)["B4"]
         nevents = tree.numentries
@@ -106,37 +140,37 @@ class TrainData_calo(TrainData):
         rechit_energy = self.tonumpy(tree["rechit_energy"].array() )
         print(rechit_energy.shape)
         
-        minbias_fraction=2
+        minbias_fraction=1
         if not istraining:
-            minbias_fraction=100 #work with this later, TBI
+            minbias_fraction=50 #100 #work with this later, TBI
+            self.nfilespremix=10
+            self.eventsperround=100
         
-        #create minbias and signal  B x V
-        no_signal = np.zeros_like(rechit_energy, dtype='float32')
-        
-        rechit_energy = np.concatenate([rechit_energy, no_signal],axis=-1) # B x 2*V
-        rechit_energy = np.reshape(rechit_energy, [nevents*2, -1]) # 2*B x V
-        
-        issignal = np.array([1.,0.], dtype='float32')
-        issignal = np.reshape(issignal, [2,1])
-        issignal = np.tile(issignal, [nevents,1])
-        
-        print(np.sum(rechit_energy,axis=-1))
-        
+        nevents = rechit_energy.shape[0]
+        rechit_energy = self.mix_signal_info(rechit_energy, minbias_fraction)
+        issignal = np.expand_dims(np.zeros(nevents,dtype='float32'),axis=1)+1.
+        issignal = self.mix_signal_info(issignal, minbias_fraction)
+       
         #for failed events
         issignal[np.sum(rechit_energy,axis=-1)==0] = 0 
+        
         
         filenumber = os.path.basename(filename)
         if "_tmp_" in filenumber:
             filenumber = filenumber.split("_tmp_")[1]
-        filenumber=int(filenumber[:-5])#remove .root
+        filenumber=filenumber[:-5]
+        filenumber=filenumber.split("_")
+        filenumber= int(filenumber[1])+int(filenumber[2])
+        seed=filenumber#remove .root
+        #print('seed',seed)
         
         
-        if False and readPU:
+        if readPU:
             print('adding PU')
-            rechit_energy = self.addPU(rechit_energy , self.nPU ,not istraining)
+            rechit_energy = self.addPU(rechit_energy , self.nPU ,not istraining, seed)
             print('PU done')
             
-        rechit_energy = self.addPU_direct(rechit_energy,filenumber,not istraining)
+        #rechit_energy = self.addPU_direct(rechit_energy,filenumber,not istraining)
             
         print(np.sum(rechit_energy,axis=-1))
         
@@ -151,20 +185,20 @@ class TrainData_calo(TrainData):
         
         
         norm = np.array([[[[
-            0.00010236,
-            0.0002501 ,
-            0.00041541,
-            0.00054669,
-            0.00065345,
-            0.00072501,
-            0.00074395,
-            0.00071629,
-            0.00067139,
-            0.00060171,
-            0.00052976,
-            0.00047216,
-            0.00039632,
-            0.00024775,
+         0.0002,#   0.00010236,
+         0.0002,#   0.0002501 ,
+         0.0002,#   0.00041541,
+         0.0002,#   0.00054669,
+         0.0002,#   0.00065345,
+         0.0002,#   0.00072501,
+         0.0002,#   0.00074395,
+         0.0002,#   0.00071629,
+         0.0002,#   0.00067139,
+         0.0002,#   0.00060171,
+         0.0002,#   0.00052976,
+         0.0002,#   0.00047216,
+         0.0002,#   0.00039632,
+         0.0002,#   0.00024775,
             ]]]],dtype='float32')
         
         rechit_energy = np.ascontiguousarray(rechit_energy/norm,dtype='float32')
@@ -180,7 +214,12 @@ class TrainData_calo(TrainData):
         #all = first_projection #np.concatenate([first_projection,sec_projection,third_projection], axis=-1)
         #
 
-        
+        if not istraining:
+            #repeat these n-nonsignal+nsignal times  # use minbiasfraction
+            true_energy = self.mix_signal_info(np.expand_dims(self.tonumpy(tree["true_energy"].array() ),axis=1), minbias_fraction)
+            true_howparallel = self.mix_signal_info(np.expand_dims(self.tonumpy(tree["true_angle"].array() ),axis=1), minbias_fraction)
+            
+            return rechit_energy, np.concatenate([issignal, true_energy, true_howparallel], axis=-1)
         
         return rechit_energy, issignal
     
@@ -191,58 +230,47 @@ class TrainData_calo(TrainData):
         #eal with phi modulo. it is 120/2pi, so 0.4 in phi should be enough, so 8 extra repitions
         all = np.concatenate([all, all[:,:,:8,:]],axis=2)
         
-        debug=True
+        debug=False
         if debug:
-            #event=1
-            for event in range(50):
+            nevents=50
+            #maxcol = np.max(np.sum(self.to_color(all[0:nevents]), axis=0)) #just use bunch for 
+            for event in range(nevents):
                 evtsforplot = np.sum(self.to_color(all[event:event+1]), axis=0)
                 import matplotlib.pyplot as plt
                 fig,ax =  plt.subplots(1,1)
                 maxcol = np.max(evtsforplot)
-                ax.imshow(evtsforplot/(maxcol+0.0001))
+                ax.imshow(evtsforplot/(maxcol+0.01))
                 #print('max energy '+str(maxcol))
                 fig.savefig("event_displ"+str(event)+".pdf")
                 plt.close()
         
+        
+        print('writing signal ',issignal.shape)
         return [all],[issignal],[]
     
     ## defines how to write out the prediction
     def writeOutPrediction(self, predicted, features, truth, weights, outfilename, inputfile):
         # predicted will be a list
         
-        out = np.concatenate([predicted[0], truth[0]],axis=-1)
-        names = 'prob_isSignal, isSignal'
-        
-        if ".root" in inputfile:
-            tree = uproot.open(inputfile)["B4"]
-            true_energy = np.expand_dims(self.tonumpy(tree["true_energy"].array() ),axis=1)
-            true_howparallel = np.expand_dims(self.tonumpy(tree["true_angle"].array() ),axis=1)
-            
-            print('true_energy' ,true_energy.shape)
-            
-            zeros = np.zeros_like(true_energy)
-            
-            true_energy = np.concatenate([true_energy,zeros],axis=-1)
-            true_energy = np.reshape(true_energy, [zeros.shape[0]*2,1])
-            
-            true_howparallel= np.concatenate([true_howparallel,zeros],axis=-1)
-            true_howparallel = np.reshape(true_howparallel, [zeros.shape[0]*2,1])
-            
-            print(predicted[0].shape, truth[0].shape, true_howparallel.shape, true_energy.shape)
-            
-            out = np.concatenate([out, true_howparallel, true_energy],axis=-1)
-            names += ', true_angle, true_energy'
+        issignal, true_energy, true_howparallel = truth[0][:,0:1], truth[0][:,1:2], truth[0][:,2:3]
+        out = np.concatenate([predicted[0], issignal, true_energy, true_howparallel],axis=-1)
+        names = 'prob_isSignal, isSignal, true_energy, true_angle'
         
         from root_numpy import array2root
         out = np.core.records.fromarrays(out.transpose(), 
                                              names=names)
         
-        array2root(out, outfilename, 'tree')
+        array2root(out, outfilename+".root", 'tree')
         
         
 
 
-
+class TrainData_calo_val(TrainData_calo):
+    def __init__(self):
+        TrainData_calo.__init__(self)
+        
+        self.always_use_test_minbias=True
+        
 
 
 class TrainData_calo_noPU(TrainData):
@@ -251,33 +279,3 @@ class TrainData_calo_noPU(TrainData):
         
         self.nPU=0
 
-
-def readFileList(path):
-    files=[]
-    with open(path) as f:
-        for l in f:
-            l = l.rstrip('\n').rstrip(' ')
-            if len(l) and os.path.isfile(l):
-                files.append(l)
-    return files
-
-def readFileListDouble(path):
-    files=[]
-    td=TrainData_calo()
-    with open(path) as f:
-        twofiles=[]
-        for l in f:
-            l = l.rstrip('\n').rstrip(' ')
-            if len(l) and os.path.isfile(l) and td.fileIsValid(l):
-                twofiles.append(l)
-                if len(twofiles)>1:
-                    files.append(twofiles)
-                    twofiles=[]
-            
-    return files
-    
-TrainData_calo_pufiles_train_double = readFileListDouble("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias_full/testbatch.txt")
-
-
-TrainData_calo_pufiles_train=readFileList("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias/samples_firstbatch.txt")
-TrainData_calo_pufiles_test=readFileList("/eos/home-j/jkiesele/DeepNtuples/DisplCalo_prod1_minbias/test_samples.txt")
