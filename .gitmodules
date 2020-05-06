@@ -1,0 +1,6 @@
+[submodule "qkeras"]
+	path = qkeras
+	url = https://github.com/google/qkeras.git
+[submodule "HGCalL1Images/qkeras"]
+	path = HGCalL1Images/qkeras
+	url = https://github.com/google/qkeras.git
