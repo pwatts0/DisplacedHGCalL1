@@ -145,20 +145,19 @@ train=training_base(testrun=False,resumeSilently=False,renewtokens=False)
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
 
-    if Prune == True:
+    if Prune:
       train.setModel(model_pruned)
       setWeights(train.keras_model,fullModel)
       print_model_sparsity(train.keras_model)
       additionalCallbacks = pruning_callbacks.UpdatePruningStep()
       
-    elif Quantize == True:
+    elif Quantize:
       model_full  = keras.models.load_model(fullModel)
       qmodel = model_quantize(model_full, qDicts['conv2d_binary'], 4, transfer_weights=True)  #currently qDicts['dense2_binary'] qDicts['conv2d_binary'] qDicts['4_bit']         
       qmodel.summary()
       print_qstats(qmodel)
       train.setModel(qmodel)
-      
-    
+     
     else:
       train.setModel(my_model)
       
