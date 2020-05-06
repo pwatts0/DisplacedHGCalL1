@@ -3,10 +3,10 @@ LLP CNN based HGCal trigger
 ================
 
 Requirements:
-  * DeepJetCore 2.1 and dependencies
+  * DeepJetCore 3 and dependencies
   
 From lxplus (CERN) run
-``/eos/home-j/jkiesele/singularity/run_deepjetcore2.1.sh`` 
+``/eos/home-j/jkiesele/singularity/run_deepjetcore3.sh`` 
 to enter interactive container environment.
 ```
 git clone --recurse-submodules -j8 https://github.com/jalimena/DisplacedHGCalL1.git
@@ -21,4 +21,5 @@ For pruning, in default_training_cnn2.py set flag Prune=True. You should have a 
 ```
 python3 default_training_cnn2.py InputDataCollection.djcdc OutPutDir/ --valdata
 ```
-When training the full model, the model floating point operations per second, per layer is estimated. This can be used as an estimate of which layer has the highest impact on resources/latency and, therefore, also which layer is most sensible to compress.
+When training the full model, the model floating point operations per layer is estimated. This can be used as an estimate of which layer has the highest impact on resources/latency and, therefore, also which layer is most sensible to compress.
+
