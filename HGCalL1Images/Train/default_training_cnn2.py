@@ -63,7 +63,7 @@ def model_pruned(Inputs,dropoutrate=0.1,momentum=0.95,pruning_params = {'pruning
     x = Dense(1, activation='sigmoid')(x)
   
     predictions = [x]
-    return Model(inputs=Inputs, outputs=predictions)
+    return Model(inputs=Inputs, outputs=predictions, name='model_pruned')
     
 def my_model(Inputs,dropoutrate=0.1,momentum=0.95):
     
@@ -135,33 +135,37 @@ def my_model_complex(Inputs,dropoutrate=0.01):
 
 
 
-Prune     = False
-Quantize  = True
-fullModel ='full_model/model.h5'
+Prune     = True
+Quantize  = False
+fullModel = 'full_model/model.h5'
 
 additionalCallbacks = None
 
 train=training_base(testrun=False,resumeSilently=False,renewtokens=False)
 
 if not train.modelSet(): # allows to resume a stopped/killed training. Only sets the model if it cannot be loaded from previous snapshot
-
+    
+    train.setModel(my_model)
+    totalGFlops = doOps(train.keras_model)
+    print('\n Total floating point ops per second = {} GFLOPS \n'.format(totalGFlops))
+    
     if Prune:
       train.setModel(model_pruned)
-      setWeights(train.keras_model,fullModel)
+      if fullModel:
+        setWeights(train.keras_model,fullModel)
       print_model_sparsity(train.keras_model)
       additionalCallbacks = pruning_callbacks.UpdatePruningStep()
       
     elif Quantize:
-      model_full  = keras.models.load_model(fullModel)
-      train.keras_model = model_quantize(model_full, qDicts['conv2d_binary'], 4, transfer_weights=True)  #currently qDicts['dense2_binary'] qDicts['conv2d_binary'] qDicts['4_bit']         
-      print_qstats(train.keras_model)
-     
-    else:
-      train.setModel(my_model)
+      try:
+        train.keras_model = keras.models.load_model(fullModel)
+        transferWeights = True 
+      except:  
+        print("No pretrained model found! Building new model without pretrained weights")
+        transferWeights = False 
       
-      totalGFlops = doOps(train.keras_model)
-      print('\n Total floating point ops per second = {} GFLOPS \n'.format(totalGFlops))
-    
+      train.keras_model = model_quantize(train.keras_model, qDicts['4_bit'], 4, transfer_weights=transferWeights)  #currently dense2_binary', conv2d_binary', '4_bit'         
+      print_qstats(train.keras_model)
     
     train.compileModel(learningrate=0.0001,
                    loss='binary_crossentropy',#binary_cross_entropy_with_extras,
