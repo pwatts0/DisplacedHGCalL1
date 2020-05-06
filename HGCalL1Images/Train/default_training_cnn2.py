@@ -139,7 +139,7 @@ Prune     = False
 Quantize  = True
 fullModel ='full_model/model.h5'
 
-additionalCallbacks = ''
+additionalCallbacks = None
 
 train=training_base(testrun=False,resumeSilently=False,renewtokens=False)
 
@@ -153,10 +153,8 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
       
     elif Quantize:
       model_full  = keras.models.load_model(fullModel)
-      qmodel = model_quantize(model_full, qDicts['conv2d_binary'], 4, transfer_weights=True)  #currently qDicts['dense2_binary'] qDicts['conv2d_binary'] qDicts['4_bit']         
-      qmodel.summary()
-      print_qstats(qmodel)
-      train.setModel(qmodel)
+      train.keras_model = model_quantize(model_full, qDicts['conv2d_binary'], 4, transfer_weights=True)  #currently qDicts['dense2_binary'] qDicts['conv2d_binary'] qDicts['4_bit']         
+      print_qstats(train.keras_model)
      
     else:
       train.setModel(my_model)
@@ -180,5 +178,6 @@ train.change_learning_rate(0.0003)
 model,history = train.trainModel(nepochs=30,
                                  batchsize=50,
                                  checkperiod=1, # saves a checkpoint model every N epochs
-                                 verbose=1)
+                                 verbose=1,
+                                 additional_callbacks = additionalCallbacks)
                                  
