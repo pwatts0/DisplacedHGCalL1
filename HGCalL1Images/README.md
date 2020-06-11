@@ -25,3 +25,7 @@ python3 default_training_cnn2.py samples/ml_traindata_flatangle/dataCollection.d
 
 When training the full model, the model floating point operations per layer is estimated. This can be used as an estimate of which layer has the highest impact on resources/latency and, therefore, also which layer is most sensible to compress.
 
+predict.py command:
+```
+predict.py KERAS_check_model_last.h5 trainsamples.djcdc /eos/user/j/jalimena/DisplacedCalo/ML/ml_testdata_flatangle_histat/allfiles.txt PredictOutput
+```
