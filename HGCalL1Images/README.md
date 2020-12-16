@@ -9,11 +9,7 @@ From lxplus (CERN) run
 ``/eos/home-j/jkiesele/singularity/run_deepjetcore3.sh`` 
 to enter interactive container environment.
 ```
-git clone --recurse-submodules -j8 https://github.com/jalimena/DisplacedHGCalL1.git
-cd DisplacedHGCalL1/HGCalL1Images/qkeras/
-python3 setup.py build
-python3 setup.py install --user
-cd ../Train
+cd <your cloned directory>
 source env.sh
 ```
 
