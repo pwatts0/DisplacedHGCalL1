@@ -1,6 +1,6 @@
 '''
 
-This is the exact model used for the arxiv paper training!
+This is a model with 8 HGCal layers
 
 '''
 
