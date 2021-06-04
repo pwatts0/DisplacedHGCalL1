@@ -168,7 +168,7 @@ if not train.modelSet(): # allows to resume a stopped/killed training. Only sets
       print_qstats(train.keras_model)
     
     train.compileModel(learningrate=0.0001,
-                   loss='binary_crossentropy',#binary_cross_entropy_with_extras) 
+                   loss='binary_crossentropy')#,binary_cross_entropy_with_extras) 
                    
 print(train.keras_model.summary())
 
